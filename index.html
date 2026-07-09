@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Volunteer Ops Copilot — FIFA World Cup 2026 (MetLife Stadium)</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+  <!-- Skip Link for Keyboard Users -->
+  <a href="#main-content" class="skip-link">Skip to main content</a>
+
+  <header role="banner" class="app-header">
+    <div class="header-container">
+      <div class="brand">
+        <span class="badge-fifa">FIFA WORLD CUP 2026™</span>
+        <h1>Volunteer Ops Copilot</h1>
+        <p class="venue-sub">New York New Jersey Stadium (MetLife Stadium) • Capacity: 82,500</p>
+      </div>
+      <div class="header-status" id="header-status-panel" aria-live="polite">
+        <span class="status-dot offline"></span>
+        <span class="status-text">No active snapshot</span>
+      </div>
+    </div>
+  </header>
+
+  <main id="main-content" class="app-container" role="main">
+    <div class="grid-layout">
+      
+      <!-- LEFT PANEL: Upload & Active Snapshot Info -->
+      <section class="panel glass" aria-labelledby="upload-section-title">
+        <div class="panel-header">
+          <h2 id="upload-section-title">1. Live Stadium Data</h2>
+          <button id="btn-clear" class="btn btn-secondary text-sm" aria-label="Clear all live data and logs">
+            Clear Data & Logs
+          </button>
+        </div>
+
+        <div class="upload-zone" id="upload-zone">
+          <label for="file-input" class="upload-label">
+            <span class="upload-icon" aria-hidden="true">📤</span>
+            <span class="upload-title">Upload Live Data Snapshot</span>
+            <span class="upload-subtitle">Drag & drop gate_status.csv or incident_log.csv</span>
+            <input type="file" id="file-input" accept=".csv" class="sr-only" aria-describedby="upload-help">
+          </label>
+          <span id="upload-help" class="sr-only">Upload a comma-separated values file detailing current stadium gate queues or logged incidents.</span>
+        </div>
+
+        <div id="snapshot-details" class="snapshot-details" aria-live="polite">
+          <h3 class="subsection-title">Active Snapshot Overview</h3>
+          <div class="snapshot-meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">File Source:</span>
+              <span id="meta-filename" class="meta-value">—</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Schema Type:</span>
+              <span id="meta-type" class="meta-value">—</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Total Records:</span>
+              <span id="meta-count" class="meta-value">—</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Last Uploaded:</span>
+              <span id="meta-timestamp" class="meta-value">—</span>
+            </div>
+          </div>
+
+          <div class="data-table-container">
+            <table class="data-table" id="data-table" aria-label="Current Live Data Records">
+              <thead>
+                <tr id="table-headers">
+                  <th scope="col">No data loaded</th>
+                </tr>
+              </thead>
+              <tbody id="table-body">
+                <tr>
+                  <td>Please upload a CSV dataset to view real-time records.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- RIGHT PANEL: Ask Copilot (Reasoning & Guidance) -->
+      <section class="panel glass" aria-labelledby="chat-section-title">
+        <div class="panel-header">
+          <h2 id="chat-section-title">2. Ask Copilot</h2>
+        </div>
+
+        <form id="query-form" class="query-form">
+          <div class="form-group">
+            <label for="target-lang" class="field-label">Relay translation to Fan? (Optional)</label>
+            <select id="target-lang" class="form-select">
+              <option value="">No translation needed</option>
+              <option value="Spanish">Spanish (Español)</option>
+              <option value="French">French (Français)</option>
+              <option value="Portuguese">Portuguese (Português)</option>
+              <option value="German">German (Deutsch)</option>
+              <option value="Italian">Italian (Italiano)</option>
+              <option value="Arabic">Arabic (العربية)</option>
+              <option value="Japanese">Japanese (日本語)</option>
+              <option value="Korean">Korean (한국어)</option>
+              <option value="Hindi">Hindi (हिन्दी)</option>
+            </select>
+          </div>
+
+          <div class="input-container">
+            <label for="volunteer-question" class="sr-only">Ask a question about stadium conditions or incidents</label>
+            <input type="text" id="volunteer-question" placeholder="e.g. Is Gate C crowded? or Someone has a lost item..." required class="form-input">
+            <button type="submit" class="btn btn-primary" id="btn-submit">
+              Consult Copilot
+            </button>
+          </div>
+        </form>
+
+        <!-- Response Console -->
+        <div class="response-console" aria-live="polite" id="response-console">
+          <!-- Loading Spinner -->
+          <div id="response-loading" class="response-loading hidden">
+            <div class="spinner" aria-hidden="true"></div>
+            <p>Gemini is reasoning over LIVE_DATA and SOP guidelines...</p>
+          </div>
+
+          <!-- Empty State -->
+          <div id="response-empty" class="response-placeholder">
+            <span class="placeholder-icon" aria-hidden="true">🤖</span>
+            <h3>Awaiting Volunteer Query</h3>
+            <p>Type your operational question above. The Copilot will analyze active live data against the World Cup SOP protocols to deliver grounded recommendations.</p>
+          </div>
+
+          <!-- AI Response Card -->
+          <div id="response-card" class="response-card hidden">
+            <div class="response-card-header">
+              <h3>Copilot Recommendation</h3>
+              <div id="urgency-badge" class="urgency-badge">
+                <span id="urgency-icon" class="urgency-icon" aria-hidden="true"></span>
+                <span id="urgency-text"></span>
+              </div>
+            </div>
+
+            <div class="response-body">
+              <div class="result-block">
+                <h4 class="block-label">Recommended Action:</h4>
+                <p id="result-recommendation" class="recommendation-text"></p>
+              </div>
+
+              <div class="result-block">
+                <h4 class="block-label">Grounded Reasoning:</h4>
+                <p id="result-reasoning" class="reasoning-text"></p>
+              </div>
+
+              <div id="translation-block" class="result-block translation-block hidden">
+                <h4 class="block-label" id="translation-title">Translation for Fan:</h4>
+                <div class="translation-bubble">
+                  <p id="result-translation"></p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- LOWER SECTION: Ops & Activity Feed -->
+    <section class="panel glass ops-log-section" aria-labelledby="log-section-title">
+      <div class="panel-header">
+        <h2 id="log-section-title">3. Operational Intelligence Feed</h2>
+        <span class="ops-subtitle">Live activity feed of volunteer inquiries and Copilot reasoning logs</span>
+      </div>
+
+      <div class="log-container">
+        <table class="log-table" aria-label="Historical activity and intelligence logs">
+          <thead>
+            <tr>
+              <th scope="col">Time</th>
+              <th scope="col">Volunteer Inquiry</th>
+              <th scope="col">Snapshot Reference</th>
+              <th scope="col">Urgency</th>
+              <th scope="col">Copilot Recommendation & Reasoning</th>
+            </tr>
+          </thead>
+          <tbody id="log-table-body">
+            <tr>
+              <td colspan="5" class="text-center py-4 text-muted">No historical inquiries logged yet.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <footer class="app-footer" role="contentinfo">
+    <p>© 2026 FIFA World Cup™ MetLife Stadium Operations. Intended for internal volunteer service. Guided by Gemini.</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
