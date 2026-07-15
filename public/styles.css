@@ -957,4 +957,47 @@ body {
   .data-table {
     min-width: 400px;
   }
+  .grid-layout {
+    grid-template-columns: 1fr !important;
+    gap: 1rem;
+  }
+
+  /* Fix feed heading completely */
+  .panel-header {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 0.3rem;
+  }
+
+  .ops-subtitle {
+    grid-column: 1;
+  }
+
+  /* Prevent any horizontal overflow */
+  * {
+    max-width: 100%;
+  }
+
+  .input-container {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto;
+    gap: 0.5rem;
+  }
+
+  .form-input {
+    grid-column: 1 / -1; /* full width */
+  }
+
+  .speech-lang-select {
+    grid-column: 1;
+  }
+
+  .btn-mic {
+    grid-column: 2;
+  }
+
+  #btn-submit {
+    grid-column: 1 / -1; /* full width */
+  }
 }
