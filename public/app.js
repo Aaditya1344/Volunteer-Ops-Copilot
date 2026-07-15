@@ -14,8 +14,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const queryForm = document.getElementById('query-form');
   const volunteerQuestion = document.getElementById('volunteer-question');
-  const targetLang = document.getElementById('target-lang');
   const btnSubmit = document.getElementById('btn-submit');
+  const btnMic = document.getElementById('btn-mic');
 
   const responseLoading = document.getElementById('response-loading');
   const responseEmpty = document.getElementById('response-empty');
@@ -37,9 +37,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const themeToggle = document.getElementById('theme-toggle');
   const themeToggleIcon = document.getElementById('theme-toggle-icon');
   const venueSubtitle = document.getElementById('venue-subtitle');
-
+  const speechLang = document.getElementById('speech-lang');
   // Base API URL
   const API_BASE = '';
+
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
 
   // Theme Configuration
   const savedTheme = localStorage.getItem('theme');
@@ -61,6 +71,51 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Initial Theme Application
   applyTheme(currentTheme);
+  // Speech recognition — shown only if browser supports it
+  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (SpeechRecognition) {
+    btnMic.classList.remove('hidden');
+    const recognition = new SpeechRecognition();
+    recognition.continuous = false;
+    recognition.interimResults = false;
+    recognition.lang = ''; // empty = auto-detect from browser locale
+    speechLang.classList.remove('hidden');
+
+    let isListening = false;
+
+    btnMic.addEventListener('click', () => {
+      if (isListening) {
+        recognition.stop();
+        return;
+      }
+      recognition.lang = speechLang.value; // use selected language
+      recognition.start();
+      isListening = true;
+      btnMic.textContent = '⏹';
+      btnMic.setAttribute('aria-label', 'Stop recording');
+      btnMic.classList.add('listening');
+    });
+
+    recognition.onresult = (event) => {
+      const transcript = event.results[0][0].transcript;
+      volunteerQuestion.value = transcript;
+      volunteerQuestion.focus();
+    };
+
+    recognition.onend = () => {
+      isListening = false;
+      btnMic.textContent = '🎤';
+      btnMic.setAttribute('aria-label', 'Let fan speak — auto-detects their language');
+      btnMic.classList.remove('listening');
+    };
+
+    recognition.onerror = (event) => {
+      console.error('Speech recognition error:', event.error);
+      isListening = false;
+      btnMic.textContent = '🎤';
+      btnMic.classList.remove('listening');
+    };
+  }
 
   // Theme Toggle Event Listener
   themeToggle.addEventListener('click', () => {
@@ -117,12 +172,38 @@ document.addEventListener('DOMContentLoaded', () => {
       uploadFile(fileInput.files[0]);
     }
   });
+  // Loading message rotator
+  const loadingMessages = [
+    "Analyzing live stadium data...",
+    "Reasoning over SOP knowledge base...",
+    "Cross-referencing crowd conditions...",
+    "Generating grounded recommendation...",
+    "Almost there — verifying response..."
+  ];
+  let loadingInterval = null;
+  const loadingMessageEl = document.getElementById('loading-message');
+
+  function startLoadingMessages() {
+    let i = 0;
+    loadingMessageEl.textContent = loadingMessages[0];
+    loadingInterval = setInterval(() => {
+      i = (i + 1) % loadingMessages.length;
+      loadingMessageEl.textContent = loadingMessages[i];
+    }, 2000);
+  }
+
+  function stopLoadingMessages() {
+    if (loadingInterval) {
+      clearInterval(loadingInterval);
+      loadingInterval = null;
+    }
+    loadingMessageEl.textContent = loadingMessages[0];
+  }
 
   // Query Submit Handler
   queryForm.addEventListener('submit', async (e) => {
     e.preventDefault();
     const question = volunteerQuestion.value.trim();
-    const language = targetLang.value;
 
     if (!question) return;
 
@@ -131,12 +212,13 @@ document.addEventListener('DOMContentLoaded', () => {
     responseCard.classList.add('hidden');
     responseLoading.classList.remove('hidden');
     responseConsole.setAttribute('aria-busy', 'true');
+    startLoadingMessages();
 
     try {
       const response = await fetch(`${API_BASE}/api/query`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question, targetLanguage: language })
+        body: JSON.stringify({ question })
       });
 
       if (!response.ok) {
@@ -153,6 +235,7 @@ document.addEventListener('DOMContentLoaded', () => {
       btnSubmit.disabled = false;
       responseLoading.classList.add('hidden');
       responseConsole.setAttribute('aria-busy', 'false');
+      stopLoadingMessages();
     }
   });
 
@@ -244,7 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
       logTableBody.innerHTML = history.map(entry => {
         const timeStr = new Date(entry.timestamp).toLocaleTimeString();
         const transHtml = entry.fan_facing_translation
-          ? `<div class="log-trans"><strong>Translated (${entry.targetLanguage}):</strong> ${entry.fan_facing_translation}</div>`
+          ? `<div class="log-trans"><strong>Fan Translation:</strong> ${entry.fan_facing_translation}</div>`
           : '';
 
         return `
@@ -348,7 +431,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     if (ai.fan_facing_translation) {
       translationBlock.classList.remove('hidden');
-      translationTitle.textContent = `Translation for Fan (${targetLang.value}):`;
+      translationTitle.textContent = 'Fan-Facing Translation:';
       resultTranslation.textContent = ai.fan_facing_translation;
     } else {
       translationBlock.classList.add('hidden');

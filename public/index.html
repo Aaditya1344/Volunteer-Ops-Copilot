@@ -98,25 +98,30 @@
         </div>
 
         <form id="query-form" class="query-form">
-          <div class="form-group">
-            <label for="target-lang" class="field-label">Relay translation to Fan? (Optional)</label>
-            <select id="target-lang" class="form-select">
-              <option value="">No translation needed</option>
-              <option value="Spanish">Spanish (Español)</option>
-              <option value="French">French (Français)</option>
-              <option value="Portuguese">Portuguese (Português)</option>
-              <option value="German">German (Deutsch)</option>
-              <option value="Italian">Italian (Italiano)</option>
-              <option value="Arabic">Arabic (العربية)</option>
-              <option value="Japanese">Japanese (日本語)</option>
-              <option value="Korean">Korean (한국어)</option>
-              <option value="Hindi">Hindi (हिन्दी)</option>
-            </select>
-          </div>
 
           <div class="input-container">
-            <label for="volunteer-question" class="sr-only">Ask a question about stadium conditions or incidents</label>
-            <input type="text" id="volunteer-question" placeholder="e.g. Is Gate C crowded? or Someone has a lost item..." required class="form-input">
+            <label for="volunteer-question" class="sr-only">Ask a question or let the fan speak</label>
+            <input type="text" id="volunteer-question"
+              placeholder="Type or tap 🎤 for fan to speak in their language..."
+              required class="form-input">
+            <select id="speech-lang" class="speech-lang-select hidden" aria-label="Fan's spoken language">
+                <option value="es-ES">Spanish</option>
+                <option value="fr-FR">French</option>
+                <option value="pt-BR">Portuguese</option>
+                <option value="de-DE">German</option>
+                <option value="it-IT">Italian</option>
+                <option value="ar-SA">Arabic</option>
+                <option value="ja-JP">Japanese</option>
+                <option value="ko-KR">Korean</option>
+                <option value="hi-IN">Hindi</option>
+                <option value="zh-CN">Chinese</option>
+                <option value="ru-RU">Russian</option>
+                <option value="tr-TR">Turkish</option>
+            </select>
+            <button type="button" id="btn-mic" class="btn-mic hidden"
+              aria-label="Let fan speak — auto-detects their language">
+              🎤
+            </button>
             <button type="submit" class="btn btn-primary" id="btn-submit">
               Consult Copilot
             </button>
@@ -128,7 +133,7 @@
           <!-- Loading Spinner -->
           <div id="response-loading" class="response-loading hidden">
             <div class="spinner" aria-hidden="true"></div>
-            <p>Gemini is reasoning over LIVE_DATA and SOP guidelines...</p>
+            <p id="loading-message">Analyzing live stadium data...</p>
           </div>
 
           <!-- Empty State -->
@@ -160,7 +165,7 @@
               </div>
 
               <div id="translation-block" class="result-block translation-block hidden">
-                <h4 class="block-label" id="translation-title">Translation for Fan:</h4>
+                <h4 class="block-label" id="translation-title">Fan-Facing Translation:</h4>
                 <div class="translation-bubble">
                   <p id="result-translation"></p>
                 </div>

@@ -7,7 +7,27 @@ const fs = require('fs');
 const path = require('path');
 const admin = require('firebase-admin');
 const { PDFParse } = require('pdf-parse');
+const LANGUAGE_CODES = {
+  'Spanish': 'es',
+  'French': 'fr',
+  'Portuguese': 'pt',
+  'German': 'de',
+  'Italian': 'it',
+  'Arabic': 'ar',
+  'Japanese': 'ja',
+  'Korean': 'ko',
+  'Hindi': 'hi',
+  'Chinese(Simplified)': 'zh-CN',
+  'Russian': 'ru',
+  'Turkish': 'tr',
+  'Dutch': 'nl',
+  'Polish': 'pl',
+  'Swedish': 'sv'
+};
 require('dotenv').config();
+const { translate } = require('google-translate-api-x');
+
+const GROQ_API_KEY = process.env.GROQ_API_KEY || null;
 // Load Venue Config — one fixed venue per deployment
 const VENUE_CONFIG_PATH = path.join(__dirname, 'venue.config.json');
 let venueConfig = {
@@ -293,6 +313,13 @@ function extractNumbersFromData(liveData) {
 // ----------------------------------------------------
 // Gemini API call with retry/backoff on 503/429
 // ----------------------------------------------------
+// Rejects after `ms` milliseconds — used to enforce API timeouts
+function withTimeout(promise, ms) {
+  const timeout = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error(`Request timed out after ${ms}ms`)), ms)
+  );
+  return Promise.race([promise, timeout]);
+}
 async function callGeminiWithRetry(url, apiBody, maxRetries = 2) {
   let lastError;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -320,6 +347,58 @@ async function callGeminiWithRetry(url, apiBody, maxRetries = 2) {
   }
   return lastError;
 }
+async function callGroq(systemPrompt, userContent) {
+  if (!GROQ_API_KEY) throw new Error('GROQ_API_KEY not configured.');
+
+  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${GROQ_API_KEY}`
+    },
+    body: JSON.stringify({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userContent }
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.3
+    })
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Groq API failed with status ${response.status}: ${errorText}`);
+  }
+
+  const result = await response.json();
+  const text = result.choices[0].message.content;
+  return JSON.parse(text);
+}
+async function detectLanguage(text) {
+  if (!text || text.trim().length < 3) return 'en';
+  try {
+    const result = await translate(text, { to: 'en' });
+    const detected = result.raw?.src || result.from?.language?.iso || 'en';
+    return detected;
+  } catch (err) {
+    console.warn('Language detection failed, defaulting to English:', err.message);
+    return 'en';
+  }
+}
+
+async function translateText(text, targetLangCode) {
+  if (!text || !targetLangCode || targetLangCode === 'en') return null;
+  try {
+    const result = await translate(text, { to: targetLangCode });
+    return result.text;
+  } catch (err) {
+    console.warn(`Translation failed for ${targetLangCode}:`, err.message);
+    return null;
+  }
+}
+
 
 // ----------------------------------------------------
 // API Route Handlers
@@ -413,7 +492,7 @@ app.post('/api/clear', async (req, res) => {
 // Query Endpoint
 app.post('/api/query', async (req, res) => {
   try {
-    const { question, targetLanguage } = req.body;
+    const { question } = req.body;
     if (!question) {
       return res.status(400).json({ error: 'Question is required' });
     }
@@ -433,9 +512,9 @@ app.post('/api/query', async (req, res) => {
 You will receive:
 1. LIVE_DATA — a JSON snapshot of current stadium conditions (gate queue lengths, crowd inflow rates, incident logs, timestamps), parsed from a file uploaded by an organizer or judge. Always reason from whatever LIVE_DATA is given, never from memory of a previous request.
 2. SOP_CONTEXT — standard operating procedures for common situations (bottlenecks, medical incidents, lost items, lost children, evacuation, ticket disputes).
-3. A volunteer's question, possibly in any language, possibly on behalf of a fan, possibly specifying a target language for a fan-facing reply.
-
+3. 3. A volunteer's question, possibly in any language, possibly on behalf of a fan.
 Rules:
+- Always respond in English regardless of the language of the question. The recommendation, reasoning, and urgency must always be in English. Translation is handled separately after your response.
 - Every recommendation must cite specific numbers/fields from LIVE_DATA and explain why in the "reasoning" field. Never give generic advice.
 - Never claim you lack real-time data — reason from the snapshot given, and state assumptions if data is incomplete.
 - If LIVE_DATA is empty or malformed, say so in "reasoning" and give the most honest, useful guidance available, with urgency "low" unless the question itself signals danger.
@@ -447,7 +526,7 @@ Respond with ONLY this JSON shape, no markdown, no extra text:
   "recommendation": "<short, actionable instruction>",
   "reasoning": "<why, citing specific LIVE_DATA fields>",
   "urgency": "low" | "medium" | "high",
-  "fan_facing_translation": "<translated recommendation, or null>"
+  "fan_facing_translation": null
 }
 
 Few-shot Example 1:
@@ -490,14 +569,13 @@ Response:
 `;
 
     const userContent = `LIVE_DATA:
-${liveDataJsonString}
+    ${liveDataJsonString}
 
-SOP_CONTEXT:
-${SOP_CONTEXT}
+    SOP_CONTEXT:
+    ${SOP_CONTEXT}
 
-Volunteer Question: "${question}"
-${targetLanguage ? `Target Language for Translation: "${targetLanguage}"` : ''}
-`;
+    Volunteer Question: "${question}"
+    `;
 
     // Construct body for Gemini API Call
     const apiBody = {
@@ -522,29 +600,62 @@ ${targetLanguage ? `Target Language for Translation: "${targetLanguage}"` : ''}
       }
     };
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
-    const response = await callGeminiWithRetry(geminiUrl, apiBody);
+    let aiResponse;
+    let usedProvider = 'gemini';
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error(`Gemini API failed after retries with status ${response.status}: ${errorText}`);
+    try {
+      // --- Try Gemini first ---
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=${apiKey}`;
+      const geminiResponse = await withTimeout(
+        callGeminiWithRetry(geminiUrl, apiBody),
+        45000 // 45 seconds — adjust to 30000 or 60000 if needed
+      );
 
-      if (response.status === 503 || response.status === 429) {
+      if (!geminiResponse.ok) {
+        const errorText = await geminiResponse.text();
+        console.warn(`Gemini failed (${geminiResponse.status}), falling back to Groq...`);
+        throw new Error(`Gemini failed: ${geminiResponse.status}`);
+      }
+
+      const geminiResult = await geminiResponse.json();
+      const textOutput = geminiResult.candidates[0].content.parts[0].text;
+      aiResponse = JSON.parse(textOutput);
+
+    } catch (geminiErr) {
+      // --- Fallback to Groq ---
+      console.warn('Switching to Groq fallback:', geminiErr.message);
+      try {
+        aiResponse = await callGroq(systemPrompt, userContent);
+        usedProvider = 'groq';
+        console.log('Groq fallback succeeded.');
+      } catch (groqErr) {
+        console.error('Both Gemini and Groq failed:', groqErr.message);
         return res.status(503).json({
           errorCode: 'copilot_busy',
           error: 'The AI service is experiencing high demand. Please try your question again in a few seconds.'
         });
       }
+    }
 
-      return res.status(502).json({
+    // Validate response shape (both providers should return the same shape)
+    if (!aiResponse || !aiResponse.recommendation || !aiResponse.urgency) {
+      console.error('Invalid AI response shape:', aiResponse);
+      return res.status(500).json({
         errorCode: 'copilot_error',
         error: 'Something went wrong processing that question. Please try again.'
       });
     }
+    // Auto-detect question language and translate recommendation back if non-English
+    const detectedLang = await detectLanguage(question);
+    if (detectedLang && detectedLang !== 'en') {
+      aiResponse.fan_facing_translation = await translateText(aiResponse.recommendation, detectedLang);
+      aiResponse.detectedLanguage = detectedLang;
+    } else {
+      aiResponse.fan_facing_translation = null;
+      aiResponse.detectedLanguage = 'en';
+    }
 
-    const result = await response.json();
-    const textOutput = result.candidates[0].content.parts[0].text;
-    const aiResponse = JSON.parse(textOutput);
+    console.log(`[INFO] Response generated by: ${usedProvider}`);
 
     // ----------------------------------------------------
     // Code-Level Grounding Guard (Backend Safeguard)
@@ -583,12 +694,13 @@ ${targetLanguage ? `Target Language for Translation: "${targetLanguage}"` : ''}
     const historyEntry = {
       timestamp: new Date().toISOString(),
       question,
-      targetLanguage: targetLanguage || null,
+      detectedLanguage: aiResponse.detectedLanguage || 'en',
       recommendation: aiResponse.recommendation,
       reasoning: aiResponse.reasoning,
       urgency: aiResponse.urgency,
       fan_facing_translation: aiResponse.fan_facing_translation,
       datasetFilename: liveData.filename || 'No data uploaded',
+      provider: usedProvider
     };
 
     await addHistoryEntry(historyEntry);
