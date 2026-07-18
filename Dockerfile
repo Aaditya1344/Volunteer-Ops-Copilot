@@ -12,7 +12,10 @@ RUN npm ci --only=production
 
 # Copy application source
 COPY server.js ./
+COPY middleware/ ./middleware/
+COPY services/ ./services/
 COPY public/ ./public/
+COPY venue.config.json ./
 
 # Expose port
 EXPOSE 8080
