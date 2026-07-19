@@ -2,7 +2,7 @@ function extractNumbersFromData(liveData) {
   const numbers = new Set();
   if (!liveData || !Array.isArray(liveData.data)) return numbers;
   liveData.data.forEach(row => {
-    Object.entries(row).forEach(([key, val]) => {
+    Object.entries(row).forEach(([, val]) => {
       const matches = String(val).match(/\b\d+(?:\.\d+)?\b/g);
       if (matches) matches.forEach(n => numbers.add(parseFloat(n)));
     });

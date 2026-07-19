@@ -88,133 +88,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// Local JSON File Database Fallback
-const LOCAL_DB_PATH = path.join(__dirname, 'local_db.json');
-
-// Initialize Local Store
-let localDb = {
-  liveData: { type: 'empty', timestamp: null, data: [] },
-  history: []
-};
-
-// Load existing local database if present
-if (fs.existsSync(LOCAL_DB_PATH)) {
-  try {
-    localDb = JSON.parse(fs.readFileSync(LOCAL_DB_PATH, 'utf8'));
-    console.log('Loaded database from local storage.');
-  } catch (err) {
-    console.error('Failed to parse local_db.json, starting fresh:', err);
-  }
-}
-
-// Write to Local DB helper
-function saveLocalDb() {
-  try {
-    fs.writeFileSync(LOCAL_DB_PATH, JSON.stringify(localDb, null, 2), 'utf8');
-  } catch (err) {
-    console.error('Error saving local_db.json:', err);
-  }
-}
-
-// Initialize Firestore with fallback
-let db = null;
-let useLocalDb = true;
-
-// Database CRUD Abstraction
-async function getLiveData() {
-  if (useLocalDb) {
-    return localDb.liveData;
-  }
-  try {
-    const doc = await db.collection('stadium_state').doc('live').get();
-    if (doc.exists) {
-      return doc.data();
-    }
-    return { type: 'empty', timestamp: null, data: [] };
-  } catch (e) {
-    console.error('Firestore getLiveData failed, using local fallback:', e);
-    return localDb.liveData;
-  }
-}
-
-async function setLiveData(liveData) {
-  if (useLocalDb) {
-    localDb.liveData = liveData;
-    saveLocalDb();
-    return;
-  }
-  try {
-    await db.collection('stadium_state').doc('live').set(liveData);
-  } catch (e) {
-    console.error('Firestore setLiveData failed, saving local:', e);
-    localDb.liveData = liveData;
-    saveLocalDb();
-  }
-}
-
-async function addHistoryEntry(entry) {
-  entry.timestamp = entry.timestamp || new Date().toISOString();
-  if (useLocalDb) {
-    localDb.history.unshift(entry); // Prepend to show newest first
-    // Cap at 100 entries
-    if (localDb.history.length > 100) localDb.history.pop();
-    saveLocalDb();
-    return;
-  }
-  try {
-    await db.collection('history').add(entry);
-  } catch (e) {
-    console.error('Firestore addHistoryEntry failed, saving local:', e);
-    localDb.history.unshift(entry);
-    saveLocalDb();
-  }
-}
-
-async function getHistory() {
-  if (useLocalDb) {
-    return localDb.history;
-  }
-  try {
-    const snapshot = await db.collection('history')
-      .orderBy('timestamp', 'desc')
-      .limit(50)
-      .get();
-    const history = [];
-    snapshot.forEach(doc => {
-      history.push(doc.data());
-    });
-    return history;
-  } catch (e) {
-    console.error('Firestore getHistory failed, using local:', e);
-    return localDb.history;
-  }
-}
-
-async function clearDatabase() {
-  const emptyData = { type: 'empty', timestamp: null, data: [] };
-  if (useLocalDb) {
-    localDb.liveData = emptyData;
-    localDb.history = [];
-    saveLocalDb();
-    return;
-  }
-  try {
-    await db.collection('stadium_state').doc('live').set(emptyData);
-    // Delete history collection documents
-    const snapshot = await db.collection('history').get();
-    const batch = db.batch();
-    snapshot.forEach(doc => {
-      batch.delete(doc.ref);
-    });
-    await batch.commit();
-  } catch (e) {
-    console.error('Firestore clear failed, clearing local:', e);
-    localDb.liveData = emptyData;
-    localDb.history = [];
-    saveLocalDb();
-  }
-}
-
 // ----------------------------------------------------
 // SOP Knowledge Base Configuration
 // ----------------------------------------------------
@@ -286,7 +159,7 @@ function extractNumbersFromData(liveData) {
   if (!liveData || !Array.isArray(liveData.data)) return numbers;
 
   liveData.data.forEach(row => {
-    Object.entries(row).forEach(([key, val]) => {
+    Object.entries(row).forEach(([, val]) => {
       // Find all numbers in values
       if (typeof val === 'string' || typeof val === 'number') {
         const matches = String(val).match(/\b\d+(?:\.\d+)?\b/g);
@@ -318,72 +191,7 @@ function extractNumbersFromData(liveData) {
 
   return numbers;
 }
-// ----------------------------------------------------
-// Gemini API call with retry/backoff on 503/429
-// ----------------------------------------------------
-// Rejects after `ms` milliseconds — used to enforce API timeouts
-function withTimeout(promise, ms) {
-  const timeout = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error(`Request timed out after ${ms}ms`)), ms)
-  );
-  return Promise.race([promise, timeout]);
-}
-async function callGeminiWithRetry(url, apiBody, maxRetries = 2) {
-  let lastError;
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(apiBody)
-    });
 
-    if (response.ok) {
-      return response;
-    }
-
-    // Only retry on overload (503) or rate limit (429)
-    if ((response.status === 503 || response.status === 429) && attempt < maxRetries) {
-      const waitMs = 1000 * Math.pow(2, attempt); // 1s, then 2s
-      console.warn(`Gemini API returned ${response.status}, retrying in ${waitMs}ms (attempt ${attempt + 1}/${maxRetries})...`);
-      await new Promise(resolve => setTimeout(resolve, waitMs));
-      lastError = response;
-      continue;
-    }
-
-    // Non-retryable error, or retries exhausted
-    return response;
-  }
-  return lastError;
-}
-async function callGroq(systemPrompt, userContent) {
-  if (!GROQ_API_KEY) throw new Error('GROQ_API_KEY not configured.');
-
-  const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'Authorization': `Bearer ${GROQ_API_KEY}`
-    },
-    body: JSON.stringify({
-      model: 'llama-3.3-70b-versatile',
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userContent }
-      ],
-      response_format: { type: 'json_object' },
-      temperature: 0.3
-    })
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`Groq API failed with status ${response.status}: ${errorText}`);
-  }
-
-  const result = await response.json();
-  const text = result.choices[0].message.content;
-  return JSON.parse(text);
-}
 async function detectLanguage(text) {
   if (!text || text.trim().length < 3) return 'en';
   try {
@@ -413,7 +221,7 @@ async function translateText(text, targetLangCode) {
 // ----------------------------------------------------
 
 // Upload Endpoint
-app.post('/api/upload',  uploadLimiter,upload.single('file'), validateFileUpload, async (req, res) => {
+app.post('/api/upload',  uploadLimiter, upload.single('file'), validateFileUpload, async (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({ error: 'No file uploaded' });
@@ -459,7 +267,7 @@ app.post('/api/upload',  uploadLimiter,upload.single('file'), validateFileUpload
     res.status(500).json({ error: 'Failed to parse file: ' + err.message });
   }
 });
-app.use((err, req, res, next) => {
+app.use((err, req, res) => {
   console.error('Unhandled error:', err.message);
   if (!res.headersSent) {
     res.status(400).json({ error: err.message || 'An unexpected error occurred.' });
@@ -622,7 +430,7 @@ Response:
       );
 
       if (!geminiResponse.ok) {
-        const errorText = await geminiResponse.text();
+        await geminiResponse.text();
         console.warn(`Gemini failed (${geminiResponse.status}), falling back to Groq...`);
         throw new Error(`Gemini failed: ${geminiResponse.status}`);
       }
@@ -673,7 +481,7 @@ Response:
     if (liveData && liveData.data && liveData.data.length > 0) {
       const numbersInCsv = extractNumbersFromData(liveData);
       const reasoningText = aiResponse.reasoning || '';
-      
+
       // Find all numbers cited in reasoning
       const numbersInReasoning = reasoningText.match(/\b\d+(?:\.\d+)?\b/g);
       let isGrounded = false;

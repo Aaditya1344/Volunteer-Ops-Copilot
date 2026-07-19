@@ -6,8 +6,8 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node server.js",
-    "test": "jest",
-    "lint": "eslint . --ext .js --ignore-pattern node_modules/ --ignore-pattern public/ --ignore-pattern coverage/"
+    "test": "jest --forceExit",
+    "lint": "eslint ."
   },
   "dependencies": {
     "@google/genai": "^2.11.0",
@@ -25,6 +25,7 @@
     "pdf-parse": "^2.4.5"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "eslint": "^10.7.0",
     "jest": "^30.4.2"
   },

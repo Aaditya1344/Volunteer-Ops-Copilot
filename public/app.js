@@ -178,7 +178,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  fileInput.addEventListener('change', (e) => {
+  fileInput.addEventListener('change', () => {
     if (fileInput.files.length > 0) {
       uploadFile(fileInput.files[0]);
     }
@@ -367,11 +367,7 @@ document.addEventListener('DOMContentLoaded', () => {
     return 'Generic CSV Dataset';
   }
 
-  function resetAIConsole() {
-    responseCard.classList.add('hidden');
-    responseEmpty.classList.remove('hidden');
-  }
-  function showFriendlyError(errorCode, message) {
+  function showFriendlyError(errorCode) {
     responseCard.classList.add('hidden');
     responseEmpty.classList.add('hidden');
 
