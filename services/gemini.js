@@ -1,4 +1,10 @@
-// Gemini and Groq AI logic
+/*
+ Calls Gemini API with exponential backoff retry on 503/429 errors
+ @param {string} url - Gemini API endpoint URL
+ @param {Object} apiBody - Request body for Gemini API
+ @param {number} maxRetries - Maximum number of retry attempts (default: 2)
+ @returns {Promise<Response>} - Fetch response object
+ */
 async function callGeminiWithRetry(url, apiBody, maxRetries = 2) {
   let lastError;
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -24,6 +30,13 @@ async function callGeminiWithRetry(url, apiBody, maxRetries = 2) {
   }
   return lastError;
 }
+
+/*
+ * Calls Groq API as fallback when Gemini is unavailable
+ * @param {string} systemPrompt - System prompt for the AI
+ * @param {string} userContent - User content including LIVE_DATA and question
+ * @returns {Promise<Object>} - Parsed AI response JSON
+ */
 
 async function callGroq(systemPrompt, userContent) {
   if (!process.env.GROQ_API_KEY) throw new Error('GROQ_API_KEY not configured.');
@@ -54,7 +67,12 @@ async function callGroq(systemPrompt, userContent) {
   const text = result.choices[0].message.content;
   return JSON.parse(text);
 }
-
+/*
+ * Wraps a promise with a timeout — rejects if promise doesn't resolve within ms
+ * @param {Promise} promise - Promise to wrap
+ * @param {number} ms - Timeout in milliseconds
+ * @returns {Promise} - Race between original promise and timeout
+ */
 function withTimeout(promise, ms) {
   const timeout = new Promise((_, reject) =>
     setTimeout(() => reject(new Error(`Request timed out after ${ms}ms`)), ms)

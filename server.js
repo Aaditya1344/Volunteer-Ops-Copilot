@@ -461,6 +461,17 @@ app.get('/api/venue-config', (req, res) => {
   res.json(venueConfig);
 });
 
+// Health check endpoint — used by Render for uptime monitoring
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    venue: venueConfig.venueName,
+    firebase: !firestore.isUsingLocalDb() ? 'connected' : 'local_fallback',
+    uptime: Math.floor(process.uptime()) + 's'
+  });
+});
+
 // Status Endpoint
 app.get('/api/status', async (req, res) => {
   try {
